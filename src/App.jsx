@@ -144,6 +144,52 @@ function ReportQueue({ reports, onStatus, onAddStop }) {
   )
 }
 
+function ProfilePanel({ user, alertsEnabled, syncState, routeLabel, onLogin, onAlerts, onSignOut }) {
+  const role = user?.role === 'admin' ? 'Delegación' : user?.role === 'driver' ? 'Chofer' : user ? 'Ciudadano' : 'Invitado'
+  return (
+    <section className="panel profile-panel">
+      <span className="eyebrow">PERFIL Y CUENTA</span>
+      <div className="profile-hero">
+        <div className="profile-avatar">{user ? user.name.slice(0, 2).toUpperCase() : 'RL'}</div>
+        <div>
+          <h2>{user ? user.name : 'Configura tu cuenta'}</h2>
+          <p>{user ? user.email : 'Inicia sesión para guardar alertas, reportes y preferencias.'}</p>
+        </div>
+      </div>
+      <div className="settings-grid">
+        <article>
+          <span>Tipo de cuenta</span>
+          <b>{role}</b>
+          <small>{user ? 'Acceso activo en web y APK' : 'Acceso público de consulta'}</small>
+        </article>
+        <article>
+          <span>Sincronización</span>
+          <b>{syncState === 'cloud' ? 'MongoDB' : syncState === 'connecting' ? 'Conectando' : syncState === 'error' ? 'Revisar API' : 'Local'}</b>
+          <small>Reportes, avisos y ruta actual</small>
+        </article>
+        <article>
+          <span>Notificaciones</span>
+          <b>{alertsEnabled ? 'Activadas' : 'Apagadas'}</b>
+          <small>Alertas cuando el camión esté cerca</small>
+        </article>
+        <article>
+          <span>Ruta asignada</span>
+          <b>{routeLabel}</b>
+          <small>Horario visible para la comunidad</small>
+        </article>
+      </div>
+      <div className="settings-list">
+        <button onClick={onAlerts}><span>⌁</span><b>Preferencias de alertas</b><small>Permisos y avisos de proximidad</small></button>
+        <button onClick={() => navigator.clipboard?.writeText(user?.email || 'Ruta Limpia').then(() => {})}><span>◎</span><b>Cuenta</b><small>Correo, rol y acceso del perfil</small></button>
+        <button><span>◌</span><b>Privacidad</b><small>La ubicación solo se usa con la ruta activa</small></button>
+      </div>
+      {user
+        ? <button className="danger-action" onClick={onSignOut}>Cerrar sesión</button>
+        : <button className="primary-button" onClick={onLogin}>Iniciar sesión</button>}
+    </section>
+  )
+}
+
 function Recenter({ position }) {
   const map = useMap()
   useEffect(() => { map.flyTo(position, map.getZoom(), { duration: 0.8 }) }, [map, position])
@@ -494,6 +540,25 @@ function App() {
     notify(savedInCloud ? 'Aviso sincronizado con la comunidad' : 'Aviso publicado en este dispositivo')
   }
 
+  const openMainRoute = () => {
+    if (user?.role === 'driver') setView('driver')
+    else if (user?.role === 'admin') setView('admin')
+    else setView('citizen')
+  }
+
+  const openProfile = () => {
+    if (user) setView('profile')
+    else setAuthOpen(true)
+  }
+
+  const navItems = [
+    { id: 'citizen', label: 'Inicio', icon: '⌂', active: view === 'citizen', action: () => setView('citizen') },
+    { id: 'report', label: 'Reportar', icon: '⚑', active: reportOpen, action: () => setReportOpen(true) },
+    { id: 'route', label: user?.role === 'driver' ? 'Mi ruta' : user?.role === 'admin' ? 'Panel' : 'Ruta', icon: '◇', active: ['driver', 'admin'].includes(view), action: openMainRoute },
+    { id: 'updates', label: 'Avisos', icon: '◷', active: view === 'updates', action: () => setView('updates') },
+    { id: 'profile', label: 'Perfil', icon: user ? user.name.slice(0, 1).toUpperCase() : '◎', active: view === 'profile', action: openProfile },
+  ]
+
   const createStaff = async (event) => {
     event.preventDefault()
     const form = event.currentTarget
@@ -521,7 +586,7 @@ function App() {
         <div className="account-area">
           {user ? <>
             <span className="account-copy"><b>{user.name}</b><small>{user.role === 'admin' ? 'Delegación' : user.role === 'driver' ? 'Chofer' : 'Ciudadano'}</small></span>
-            <button className="profile" onClick={signOutUser} aria-label="Cerrar sesión">{user.name.slice(0, 2).toUpperCase()}</button>
+            <button className="profile" onClick={openProfile} aria-label="Abrir perfil">{user.name.slice(0, 2).toUpperCase()}</button>
           </> : <button className="login-button" onClick={() => setAuthOpen(true)}>Iniciar sesión</button>}
         </div>
       </header>
@@ -569,6 +634,13 @@ function App() {
             {feed.slice(0, 5).map((notice) => <article key={notice.id}><div className="notice-icon">✓</div><div><small>{notice.date}</small><h3>{notice.title}</h3><p>{notice.text}</p></div></article>)}
           </section>
         </>}
+
+        {view === 'updates' && <section className="notices updates-panel">
+          <div className="section-title"><div><span className="eyebrow">CENTRO DE AVISOS</span><h2>Comunicados de la ruta</h2></div><span className="record-count">{feed.length} avisos</span></div>
+          {feed.map((notice) => <article key={notice.id}><div className="notice-icon">✓</div><div><small>{notice.date}</small><h3>{notice.title}</h3><p>{notice.text}</p></div></article>)}
+        </section>}
+
+        {view === 'profile' && <ProfilePanel user={user} alertsEnabled={alertsEnabled} syncState={syncState} routeLabel={routeLabel} onLogin={() => setAuthOpen(true)} onAlerts={requestAlerts} onSignOut={signOutUser} />}
 
         {view === 'driver' && user?.role === 'driver' && <section className="panel driver-panel">
           <span className="eyebrow">MODO OPERADOR</span><h2>Control de la ruta</h2><p>Comparte la ubicación del dispositivo con la comunidad durante el recorrido.</p>
@@ -633,6 +705,14 @@ function App() {
           </div>
         </section>}
       </main>
+      <nav className="glass-nav" aria-label="Menú principal">
+        {navItems.map((item) => (
+          <button key={item.id} className={item.active ? 'active' : ''} onClick={item.action} aria-label={item.label}>
+            <span>{item.icon}</span>
+            <b>{item.label}</b>
+          </button>
+        ))}
+      </nav>
       <footer><span>Ruta Limpia · Prototipo académico PWA</span><span>Universidad Tecnológica de Tula-Tepeji · 2026</span></footer>
     </div>
   )
