@@ -1,0 +1,4 @@
+html { background: #f5f7f1; }
+body { margin: 0; min-width: 320px; font-family: 'DM Sans', 'Segoe UI', sans-serif; }
+button, a, textarea { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, a:focus-visible, textarea:focus-visible { outline: 3px solid #aadd58; outline-offset: 3px; }

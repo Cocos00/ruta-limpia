@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Ruta Limpia</string>
+    <string name="title_activity_main">Ruta Limpia</string>
+    <string name="package_name">mx.utt.rutalimpia</string>
+    <string name="custom_url_scheme">mx.utt.rutalimpia</string>
+</resources>
