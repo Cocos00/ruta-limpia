@@ -10,7 +10,7 @@ dotenv.config({ quiet: true })
 
 const PORT = Number(process.env.PORT || 4000)
 const rawMongoUri = process.env.MONGODB_URI?.trim()
-const MONGODB_URI = rawMongoUri && !rawMongoUri.includes('usuario:password') && !rawMongoUri.includes('cluster.mongodb.net')
+const MONGODB_URI = rawMongoUri && !rawMongoUri.includes('usuario:password')
   ? rawMongoUri
   : ''
 const DB_NAME = process.env.MONGODB_DB || 'ruta_limpia'
@@ -24,6 +24,8 @@ app.use(cors())
 app.use(express.json({ limit: '1mb' }))
 
 let db
+let dbStatus = MONGODB_URI ? 'connecting' : 'not-configured'
+let dbError = ''
 
 const publicUser = (user) => user && ({
   id: String(user._id),
@@ -71,7 +73,7 @@ const passwordMatches = (password, stored) => {
 }
 
 const requireDb = (request, response, next) => {
-  if (!db) return response.status(503).json({ error: 'MongoDB no esta configurado.' })
+  if (!db) return response.status(503).json({ error: dbStatus === 'connection-error' ? 'MongoDB no está conectado. Revisa Network Access en Atlas o la URI.' : 'MongoDB no está configurado.' })
   next()
 }
 
@@ -114,7 +116,11 @@ async function seedFirstAdmin() {
 }
 
 app.get('/api/health', (_request, response) => {
-  response.json({ ok: true, database: db ? 'mongodb' : 'not-configured' })
+  response.json({
+    ok: true,
+    database: db ? 'mongodb' : dbStatus,
+    error: db ? '' : dbError,
+  })
 })
 
 app.post('/api/auth/register', requireDb, async (request, response) => {
@@ -241,11 +247,17 @@ async function start() {
       db = client.db(DB_NAME)
       await db.collection('users').createIndex({ email: 1 }, { unique: true })
       await seedFirstAdmin()
+      dbStatus = 'mongodb'
+      dbError = ''
       console.log(`MongoDB conectado: ${DB_NAME}`)
     } catch (error) {
+      dbStatus = 'connection-error'
+      dbError = error.code || error.message
       console.warn(`No se pudo conectar a MongoDB (${error.code || error.message}). La API seguira en modo demo.`)
     }
   } else {
+    dbStatus = 'not-configured'
+    dbError = 'MONGODB_URI no configurado o es el ejemplo.'
     console.log('MONGODB_URI no configurado o todavia es el ejemplo. La API iniciara en modo demo.')
   }
   app.listen(PORT, () => console.log(`API Ruta Limpia en http://localhost:${PORT}`))
