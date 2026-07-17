@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Circle, CircleMarker, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet'
+import { Circle, CircleMarker, MapContainer, Polyline, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import {
   cloudEnabled,
   createStaffAccount,
@@ -28,6 +28,23 @@ const DEFAULT_ROUTE_PLAN = {
   time: '08:00',
   name: 'Ruta centro',
 }
+const DEFAULT_ROUTE_POINTS = [
+  [20.0572, -99.2812],
+  [20.0551, -99.2787],
+  [20.0535, -99.2754],
+  [20.0518, -99.2729],
+]
+const NEAR_TRUCK_METERS = 250
+
+const distanceInMeters = ([latA, lngA], [latB, lngB]) => {
+  const earthRadius = 6371000
+  const toRad = (value) => value * Math.PI / 180
+  const dLat = toRad(latB - latA)
+  const dLng = toRad(lngB - lngA)
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRad(latA)) * Math.cos(toRad(latB)) * Math.sin(dLng / 2) ** 2
+  return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
 
 function AuthModal({ onClose, notify }) {
   const [mode, setMode] = useState('login')
@@ -53,6 +70,7 @@ function AuthModal({ onClose, notify }) {
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section className="auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-title">
         <button className="modal-close" onClick={onClose} aria-label="Cerrar">×</button>
+        <div className="auth-orbit" aria-hidden="true"><span></span><span></span><span></span></div>
         <span className="auth-logo">♻</span>
         <span className="eyebrow">RUTA LIMPIA</span>
         <h2 id="auth-title">{mode === 'login' ? 'Bienvenido de vuelta' : 'Crea tu cuenta'}</h2>
@@ -78,6 +96,7 @@ function ReportModal({ onClose, onSubmit, loading }) {
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section className="auth-modal report-modal" role="dialog" aria-modal="true" aria-labelledby="report-title">
         <button className="modal-close" onClick={onClose} aria-label="Cerrar">×</button>
+        <div className="auth-orbit" aria-hidden="true"><span></span><span></span><span></span></div>
         <span className="auth-logo">⚑</span>
         <span className="eyebrow">REPORTE CIUDADANO</span>
         <h2 id="report-title">Reportar basura</h2>
@@ -93,7 +112,7 @@ function ReportModal({ onClose, onSubmit, loading }) {
   )
 }
 
-function ReportQueue({ reports, onStatus }) {
+function ReportQueue({ reports, onStatus, onAddStop }) {
   const pending = reports.filter((report) => report.status !== 'resolved')
   return (
     <div className="report-queue">
@@ -103,6 +122,7 @@ function ReportQueue({ reports, onStatus }) {
         <article key={report.id}>
           <div><b>{report.category || 'Basura acumulada'}</b><small>{report.details || 'Sin descripción'} · {report.date}</small><code>{Number(report.lat).toFixed(5)}, {Number(report.lng).toFixed(5)}</code></div>
           <div className="report-actions">
+            {onAddStop && <button onClick={() => onAddStop(report)}>Sumar a ruta</button>}
             {report.status === 'open' && <button onClick={() => onStatus(report.id, 'attending')}>Atender</button>}
             <button className="resolve" onClick={() => onStatus(report.id, 'resolved')}>Resolver</button>
           </div>
@@ -118,7 +138,18 @@ function Recenter({ position }) {
   return null
 }
 
-function LiveMap({ truckPosition, suspended, reports }) {
+function RouteClickHandler({ onAddPoint }) {
+  useMapEvents({
+    click(event) {
+      onAddPoint([event.latlng.lat, event.latlng.lng])
+    },
+  })
+  return null
+}
+
+function LiveMap({ truckPosition, suspended, reports, routePoints = [], editable = false, onAddPoint }) {
+  const visibleRoute = routePoints.length ? routePoints : DEFAULT_ROUTE_POINTS
+  const fullRoute = [truckPosition, ...visibleRoute]
   return (
     <MapContainer center={truckPosition} zoom={15} scrollWheelZoom={false} className="leaflet-map" aria-label="Mapa en vivo de la ruta">
       <TileLayer
@@ -126,9 +157,15 @@ function LiveMap({ truckPosition, suspended, reports }) {
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
       <Circle center={COMMUNITY} radius={1000} pathOptions={{ color: '#16834c', fillColor: '#aadd58', fillOpacity: 0.08, weight: 2 }} />
+      <Polyline positions={fullRoute} pathOptions={{ color: suspended ? '#b9453c' : '#16834c', weight: 5, opacity: 0.72, dashArray: suspended ? '10 12' : undefined }} />
       <CircleMarker center={COMMUNITY} radius={8} pathOptions={{ color: '#fff', fillColor: '#16834c', fillOpacity: 1, weight: 4 }}>
         <Popup>Centro de Pueblo Nuevo Jasso</Popup>
       </CircleMarker>
+      {visibleRoute.map((point, index) => (
+        <CircleMarker key={`${point[0]}-${point[1]}-${index}`} center={point} radius={7} pathOptions={{ color: '#fff', fillColor: '#315e7a', fillOpacity: 1, weight: 3 }}>
+          <Popup>Parada {index + 1}</Popup>
+        </CircleMarker>
+      ))}
       <CircleMarker center={truckPosition} radius={15} pathOptions={{ color: '#fff', fillColor: suspended ? '#b9453c' : '#0d6137', fillOpacity: 1, weight: 5 }}>
         <Popup>{suspended ? 'Unidad detenida por avería' : 'Camión recolector en ruta'}</Popup>
       </CircleMarker>
@@ -137,6 +174,7 @@ function LiveMap({ truckPosition, suspended, reports }) {
           <Popup>Punto crítico reportado<br />{report.date}</Popup>
         </CircleMarker>
       ))}
+      {editable && onAddPoint && <RouteClickHandler onAddPoint={onAddPoint} />}
       <Recenter position={truckPosition} />
     </MapContainer>
   )
@@ -155,6 +193,8 @@ function App() {
   const [syncState, setSyncState] = useState(cloudEnabled ? 'connecting' : 'local')
   const [truckPosition, setTruckPosition] = useState(COMMUNITY)
   const [routePlan, setRoutePlan] = useState(DEFAULT_ROUTE_PLAN)
+  const [routePoints, setRoutePoints] = useState(DEFAULT_ROUTE_POINTS)
+  const [nearbyDistance, setNearbyDistance] = useState(null)
   const [failureText, setFailureText] = useState('Avería mecánica')
   const [reports, setReports] = useState(() => JSON.parse(localStorage.getItem(REPORTS_KEY) || '[]'))
   const [notices, setNotices] = useState(() => JSON.parse(localStorage.getItem(NOTICES_KEY) || '[]'))
@@ -166,6 +206,7 @@ function App() {
   const previousOpenReports = useRef(null)
   const previousRouteStatus = useRef(null)
   const previousNoticeCount = useRef(null)
+  const nearTruckNotified = useRef(false)
 
   const coords = useMemo(() => `${truckPosition[0].toFixed(5)}, ${truckPosition[1].toFixed(5)}`, [truckPosition])
   const routeLabel = `${routePlan.day} ${routePlan.time} · ${routePlan.name}`
@@ -195,6 +236,7 @@ function App() {
         time: route.time || DEFAULT_ROUTE_PLAN.time,
         name: route.name || DEFAULT_ROUTE_PLAN.name,
       })
+      if (Array.isArray(route.points)) setRoutePoints(route.points)
       setRouteActive(route.status === 'active')
       setSuspended(route.status === 'suspended')
       setSyncState('cloud')
@@ -232,6 +274,29 @@ function App() {
   }, [alertsEnabled, notices, user?.role])
 
   useEffect(() => {
+    if (!alertsEnabled || !routeActive || suspended || user?.role === 'driver' || !navigator.geolocation) {
+      setNearbyDistance(null)
+      nearTruckNotified.current = false
+      return undefined
+    }
+    const proximityWatch = navigator.geolocation.watchPosition(
+      ({ coords: current }) => {
+        const distance = Math.round(distanceInMeters([current.latitude, current.longitude], truckPosition))
+        setNearbyDistance(distance)
+        if (distance <= NEAR_TRUCK_METERS && !nearTruckNotified.current) {
+          nearTruckNotified.current = true
+          sendDeviceNotification('Camión cerca', `La unidad está a unos ${distance} m. Prepara tus residuos.`).catch(() => {})
+          notify(`Camión cerca: aproximadamente ${distance} m`)
+        }
+        if (distance > NEAR_TRUCK_METERS * 2) nearTruckNotified.current = false
+      },
+      () => setNearbyDistance(null),
+      { enableHighAccuracy: true, maximumAge: 15000, timeout: 15000 },
+    )
+    return () => navigator.geolocation.clearWatch(proximityWatch)
+  }, [alertsEnabled, routeActive, suspended, truckPosition, user?.role])
+
+  useEffect(() => {
     if (user?.role !== 'admin') {
       setUsers([])
       return undefined
@@ -255,7 +320,7 @@ function App() {
     watchId.current = null
     setRouteActive(false)
     setGpsState('idle')
-    await saveRoute({ status: 'inactive', ...routePlan }).catch(() => setSyncState('error'))
+    await saveRoute({ status: 'inactive', ...routePlan, points: routePoints }).catch(() => setSyncState('error'))
   }
 
   const startGps = () => {
@@ -274,7 +339,7 @@ function App() {
         const now = Date.now()
         if (now - lastSentAt.current >= 15000) {
           lastSentAt.current = now
-          saveRoute({ lat: current.latitude, lng: current.longitude, status: 'active', ...routePlan }).catch(() => setSyncState('error'))
+          saveRoute({ lat: current.latitude, lng: current.longitude, status: 'active', ...routePlan, points: routePoints }).catch(() => setSyncState('error'))
         }
       },
       () => {
@@ -329,12 +394,41 @@ function App() {
     }
   }
 
+  const persistRoutePoints = async (nextPoints, message = 'Ruta actualizada') => {
+    setRoutePoints(nextPoints)
+    const savedInCloud = await saveRoute({
+      status: routeActive ? 'active' : suspended ? 'suspended' : 'inactive',
+      ...routePlan,
+      points: nextPoints,
+    }).catch(() => false)
+    notify(savedInCloud ? message : 'Ruta guardada en este dispositivo')
+  }
+
+  const addRoutePoint = (point) => {
+    persistRoutePoints([...routePoints, point], 'Parada agregada a la ruta')
+  }
+
+  const undoRoutePoint = () => {
+    if (routePoints.length === 0) return notify('No hay paradas para quitar')
+    persistRoutePoints(routePoints.slice(0, -1), 'Última parada retirada')
+  }
+
+  const resetRoutePoints = () => {
+    persistRoutePoints([], 'Ruta limpiada')
+  }
+
+  const addReportToRoute = (report) => {
+    if (!Number.isFinite(report.lat) || !Number.isFinite(report.lng)) return notify('El reporte no tiene ubicación válida')
+    persistRoutePoints([...routePoints, [Number(report.lat), Number(report.lng)]], 'Reporte sumado a la ruta')
+    updateReportStatus(report.id, 'attending').catch(() => {})
+  }
+
   const updateRoutePlan = async (event) => {
     event.preventDefault()
     const values = Object.fromEntries(new FormData(event.currentTarget))
     const nextPlan = { day: values.day, time: values.time, name: values.name.trim() || DEFAULT_ROUTE_PLAN.name }
     setRoutePlan(nextPlan)
-    const savedInCloud = await saveRoute({ status: routeActive ? 'active' : suspended ? 'suspended' : 'inactive', ...nextPlan }).catch(() => false)
+    const savedInCloud = await saveRoute({ status: routeActive ? 'active' : suspended ? 'suspended' : 'inactive', ...nextPlan, points: routePoints }).catch(() => false)
     const notice = { id: crypto.randomUUID(), date: 'Ahora', title: 'Horario de ruta actualizado', text: `${nextPlan.name}: ${nextPlan.day} a las ${nextPlan.time}.` }
     const noticeSaved = await saveNotice(notice).catch(() => false)
     if (!noticeSaved) {
@@ -351,7 +445,7 @@ function App() {
     const reason = failureText.trim() || 'Avería mecánica'
     const notice = { id: crypto.randomUUID(), date: 'Ahora', title: 'Ruta suspendida', text: `La unidad reportó: ${reason}. Ruta afectada: ${routeLabel}.` }
     const savedInCloud = await saveNotice(notice).catch(() => false)
-    await saveRoute({ status: 'suspended', failure: reason, ...routePlan }).catch(() => setSyncState('error'))
+    await saveRoute({ status: 'suspended', failure: reason, ...routePlan, points: routePoints }).catch(() => setSyncState('error'))
     if (!savedInCloud) {
       const next = [notice, ...notices]
       setNotices(next)
@@ -426,7 +520,7 @@ function App() {
               <p>{suspended ? 'Te avisaremos cuando el servicio se reanude.' : routeActive ? 'Consulta su posición actual en el mapa.' : 'El seguimiento aparecerá cuando el chofer inicie.'}</p>
               <div className="eta"><b>{suspended ? '—' : routeActive ? 'GPS' : routePlan.day.slice(0, 3)}</b><span>{suspended ? 'Sin hora estimada' : routeActive ? 'ubicación en vivo' : routePlan.time}</span></div>
             </div>
-            <div className="map-card"><LiveMap truckPosition={truckPosition} suspended={suspended} reports={reports} /><div className="map-key"><span></span>{suspended ? 'Unidad detenida' : routeActive ? 'Ubicación en vivo' : 'Punto de referencia'}</div></div>
+            <div className="map-card"><LiveMap truckPosition={truckPosition} suspended={suspended} reports={reports} routePoints={routePoints} /><div className="map-key"><span></span>{nearbyDistance !== null ? `Camión a ${nearbyDistance} m` : suspended ? 'Unidad detenida' : routeActive ? 'Ubicación en vivo' : 'Ruta programada'}</div></div>
           </section>
           <section className="quick-grid">
             <button className="action-card report" onClick={() => setReportOpen(true)}><span className="icon">⚑</span><span><b>Reportar basura</b><small>{reports.filter((item) => item.status === 'open').length ? `${reports.filter((item) => item.status === 'open').length} punto(s) pendiente(s)` : 'Marca un punto crítico'}</small></span><i>›</i></button>
@@ -449,12 +543,25 @@ function App() {
             <label>Ruta<input name="name" value={routePlan.name} onChange={(event) => setRoutePlan({ ...routePlan, name: event.target.value })} placeholder="Ruta centro" /></label>
             <button>Guardar horario</button>
           </form>
+          <div className="route-editor">
+            <div className="route-editor-head">
+              <div><h3>Trazar recorrido</h3><p>Toca el mapa para agregar paradas. Si entra un reporte, puedes sumarlo como desvío.</p></div>
+              <span>{routePoints.length} paradas</span>
+            </div>
+            <div className="driver-map">
+              <LiveMap truckPosition={truckPosition} suspended={suspended} reports={reports} routePoints={routePoints} editable onAddPoint={addRoutePoint} />
+            </div>
+            <div className="route-tools">
+              <button onClick={undoRoutePoint}>Deshacer punto</button>
+              <button onClick={resetRoutePoints}>Limpiar ruta</button>
+            </div>
+          </div>
           <div className={`driver-state ${routeActive ? 'on' : ''}`}><div className="big-truck">🚛</div><div><small>{gpsState === 'requesting' ? 'SOLICITANDO UBICACIÓN' : routeActive ? 'GPS ACTIVO' : gpsState === 'error' ? 'GPS NO DISPONIBLE' : 'UNIDAD SIN CONEXIÓN'}</small><b>{routeActive ? 'Ruta activa' : 'Ruta no iniciada'}</b><span>{routeActive ? coords : 'Pulsa el botón para comenzar'}</span></div></div>
           <button className="primary-button" onClick={routeActive ? stopGps : startGps} disabled={gpsState === 'requesting'}>{gpsState === 'requesting' ? 'Esperando permiso…' : routeActive ? 'Finalizar ruta' : 'Iniciar ruta y compartir GPS'}</button>
           <label className="failure-label">Falla o incidencia<textarea value={failureText} onChange={(event) => setFailureText(event.target.value)} maxLength="160" placeholder="Ej. Ponchadura, falla mecánica, retraso por tráfico" /></label>
           <button className="breakdown-button" disabled={!routeActive} onClick={reportBreakdown}>⚠ Reportar avería mecánica</button>
           <p className="privacy-note">🔒 La ubicación se usa únicamente mientras la ruta está activa.</p>
-          <ReportQueue reports={reports} onStatus={changeReportStatus} />
+          <ReportQueue reports={reports} onStatus={changeReportStatus} onAddStop={addReportToRoute} />
         </section>}
 
         {view === 'admin' && user?.role === 'admin' && <section className="panel admin-panel">
