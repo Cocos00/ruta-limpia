@@ -35,6 +35,7 @@ const DEFAULT_ROUTE_POINTS = [
   [20.0518, -99.2729],
 ]
 const NEAR_TRUCK_METERS = 250
+const AUTH_ANIMATION_MS = 980
 
 const distanceInMeters = ([latA, lngA], [latB, lngB]) => {
   const earthRadius = 6371000
@@ -46,7 +47,19 @@ const distanceInMeters = ([latA, lngA], [latB, lngB]) => {
   return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
-function AuthModal({ onClose, notify }) {
+function AuthTransition({ type }) {
+  const isOut = type === 'out'
+  return (
+    <div className="session-transition" role="status" aria-live="polite">
+      <div className="session-pulse"><span></span><span></span><span></span></div>
+      <b>{isOut ? 'Cerrando sesión' : 'Abriendo panel'}</b>
+      <small>{isOut ? 'Guardando cambios locales' : 'Sincronizando ruta, reportes y avisos'}</small>
+      <div className="session-progress"><i></i></div>
+    </div>
+  )
+}
+
+function AuthModal({ onClose, onAuthenticated, notify }) {
   const [mode, setMode] = useState('login')
   const [loading, setLoading] = useState(false)
 
@@ -57,8 +70,7 @@ function AuthModal({ onClose, notify }) {
     try {
       if (mode === 'register') await registerCitizen(values)
       else await login(values)
-      notify(mode === 'register' ? 'Cuenta creada correctamente' : 'Sesión iniciada')
-      onClose()
+      await onAuthenticated(mode === 'register' ? 'Cuenta creada correctamente' : 'Sesión iniciada')
     } catch (error) {
       notify(error.message)
     } finally {
@@ -80,7 +92,7 @@ function AuthModal({ onClose, notify }) {
           {mode === 'register' && <label>Nombre completo<input name="name" required minLength="2" autoComplete="name" placeholder="Tu nombre" /></label>}
           <label>Correo electrónico<input name="email" type="email" required autoComplete="email" placeholder="nombre@correo.com" /></label>
           <label>Contraseña<input name="password" type="password" required minLength="6" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder="Mínimo 6 caracteres" /></label>
-          <button className="primary-button" disabled={loading || !cloudEnabled}>{loading ? 'Procesando…' : mode === 'login' ? 'Iniciar sesión' : 'Crear cuenta ciudadana'}</button>
+          <button className="primary-button auth-submit" disabled={loading || !cloudEnabled}>{loading ? <span><i></i>Conectando</span> : mode === 'login' ? 'Iniciar sesión' : 'Crear cuenta ciudadana'}</button>
         </form>
         <button className="auth-switch" onClick={() => setMode(mode === 'login' ? 'register' : 'login')}>
           {mode === 'login' ? '¿No tienes cuenta? Crear una' : 'Ya tengo una cuenta'}
@@ -157,12 +169,12 @@ function LiveMap({ truckPosition, suspended, reports, routePoints = [], editable
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
       <Circle center={COMMUNITY} radius={1000} pathOptions={{ color: '#16834c', fillColor: '#aadd58', fillOpacity: 0.08, weight: 2 }} />
-      <Polyline positions={fullRoute} pathOptions={{ color: suspended ? '#b9453c' : '#16834c', weight: 5, opacity: 0.72, dashArray: suspended ? '10 12' : undefined }} />
+      <Polyline positions={fullRoute} pathOptions={{ color: suspended ? '#b9453c' : '#fc4c02', weight: 5, opacity: 0.78, dashArray: suspended ? '10 12' : undefined }} />
       <CircleMarker center={COMMUNITY} radius={8} pathOptions={{ color: '#fff', fillColor: '#16834c', fillOpacity: 1, weight: 4 }}>
         <Popup>Centro de Pueblo Nuevo Jasso</Popup>
       </CircleMarker>
       {visibleRoute.map((point, index) => (
-        <CircleMarker key={`${point[0]}-${point[1]}-${index}`} center={point} radius={7} pathOptions={{ color: '#fff', fillColor: '#315e7a', fillOpacity: 1, weight: 3 }}>
+        <CircleMarker key={`${point[0]}-${point[1]}-${index}`} center={point} radius={7} pathOptions={{ color: '#fff', fillColor: '#111111', fillOpacity: 1, weight: 3 }}>
           <Popup>Parada {index + 1}</Popup>
         </CircleMarker>
       ))}
@@ -184,6 +196,7 @@ function App() {
   const [view, setView] = useState('citizen')
   const [user, setUser] = useState(null)
   const [authOpen, setAuthOpen] = useState(false)
+  const [sessionTransition, setSessionTransition] = useState(null)
   const [reportOpen, setReportOpen] = useState(false)
   const [reporting, setReporting] = useState(false)
   const [routeActive, setRouteActive] = useState(false)
@@ -210,6 +223,8 @@ function App() {
 
   const coords = useMemo(() => `${truckPosition[0].toFixed(5)}, ${truckPosition[1].toFixed(5)}`, [truckPosition])
   const routeLabel = `${routePlan.day} ${routePlan.time} · ${routePlan.name}`
+  const openReportsCount = reports.filter((item) => item.status === 'open').length
+  const activeRouteDistance = nearbyDistance !== null ? `${nearbyDistance} m` : routeActive ? 'GPS' : routePlan.time
   const feed = notices.length ? notices : [
     { id: 'demo-1', date: 'Hoy · 7:42', title: 'Ruta en curso', text: 'La unidad salió del taller municipal.' },
     { id: 'demo-2', date: 'Sábado · 8:10', title: 'Servicio completado', text: 'La recolección terminó sin incidentes.' },
@@ -309,10 +324,22 @@ function App() {
     window.setTimeout(() => setToast(''), 3200)
   }
 
+  const completeAuthentication = async (message) => {
+    setSessionTransition('in')
+    notify(message)
+    await new Promise((resolve) => window.setTimeout(resolve, AUTH_ANIMATION_MS))
+    setAuthOpen(false)
+    setSessionTransition(null)
+  }
+
   const signOutUser = async () => {
+    setSessionTransition('out')
+    await new Promise((resolve) => window.setTimeout(resolve, AUTH_ANIMATION_MS * 0.72))
     await logout()
     setView('citizen')
     notify('Sesión cerrada')
+    await new Promise((resolve) => window.setTimeout(resolve, 240))
+    setSessionTransition(null)
   }
 
   const stopGps = async () => {
@@ -484,9 +511,10 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${sessionTransition ? 'session-is-transitioning' : ''}`}>
       {toast && <div className="toast" role="status">{toast}</div>}
-      {authOpen && <AuthModal onClose={() => setAuthOpen(false)} notify={notify} />}
+      {sessionTransition && <AuthTransition type={sessionTransition} />}
+      {authOpen && <AuthModal onClose={() => setAuthOpen(false)} onAuthenticated={completeAuthentication} notify={notify} />}
       {reportOpen && <ReportModal onClose={() => !reporting && setReportOpen(false)} onSubmit={addReport} loading={reporting} />}
       <header>
         <a className="brand" href="#" aria-label="Ruta Limpia, inicio"><span className="brand-mark">♻</span><span><b>Ruta Limpia</b><small>Pueblo Nuevo Jasso</small></span></a>
@@ -511,6 +539,13 @@ function App() {
           {user?.role === 'driver' && <button className={view === 'driver' ? 'active' : ''} onClick={() => setView('driver')}>Mi ruta</button>}
           {user?.role === 'admin' && <button className={view === 'admin' ? 'active' : ''} onClick={() => setView('admin')}>Delegación</button>}
         </nav>
+
+        <section className="activity-strip" aria-label="Resumen de ruta">
+          <article><span>Estado</span><b>{suspended ? 'Pausada' : routeActive ? 'En vivo' : 'Programada'}</b><small>{routePlan.name}</small></article>
+          <article><span>Cercanía</span><b>{activeRouteDistance}</b><small>{routeActive ? 'del camión' : 'salida estimada'}</small></article>
+          <article><span>Recorrido</span><b>{routePoints.length}</b><small>paradas trazadas</small></article>
+          <article><span>Reportes</span><b>{openReportsCount}</b><small>pendientes</small></article>
+        </section>
 
         {view === 'citizen' && <>
           <section className={`status-card ${suspended ? 'danger' : ''}`}>
