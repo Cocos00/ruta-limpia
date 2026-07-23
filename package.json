@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "api": "node server/index.js",
+    "api:local": "node server/local.js",
     "build": "vite build",
     "android:sync": "npm run build && cap sync android",
     "android:open": "cap open android",
