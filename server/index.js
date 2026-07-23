@@ -16,6 +16,7 @@ const MONGODB_URI = rawMongoUri && !rawMongoUri.includes('usuario:password')
 const DB_NAME = process.env.MONGODB_DB || 'ruta_limpia'
 const TOKEN_SECRET = process.env.SESSION_SECRET || 'ruta-limpia-dev-secret'
 const DNS_SERVERS = (process.env.DNS_SERVERS || '8.8.8.8,1.1.1.1').split(',').map((server) => server.trim()).filter(Boolean)
+const MONGODB_SERVER_SELECTION_TIMEOUT_MS = Number(process.env.MONGODB_SERVER_SELECTION_TIMEOUT_MS || 8000)
 
 if (DNS_SERVERS.length) dns.setServers(DNS_SERVERS)
 
@@ -24,6 +25,7 @@ app.use(cors())
 app.use(express.json({ limit: '1mb' }))
 
 let db
+let mongoClient
 let dbStatus = MONGODB_URI ? 'connecting' : 'not-configured'
 let dbError = ''
 
@@ -242,9 +244,9 @@ app.put('/api/routes/current', requireDb, requireUser, requireStaff, async (requ
 async function start() {
   if (MONGODB_URI) {
     try {
-      const client = new MongoClient(MONGODB_URI, { serverSelectionTimeoutMS: 8000 })
-      await client.connect()
-      db = client.db(DB_NAME)
+      mongoClient = new MongoClient(MONGODB_URI, { serverSelectionTimeoutMS: MONGODB_SERVER_SELECTION_TIMEOUT_MS })
+      await mongoClient.connect()
+      db = mongoClient.db(DB_NAME)
       await db.collection('users').createIndex({ email: 1 }, { unique: true })
       await seedFirstAdmin()
       dbStatus = 'mongodb'
@@ -267,3 +269,12 @@ start().catch((error) => {
   console.error(error)
   process.exit(1)
 })
+
+const shutdown = async (signal) => {
+  console.log(`${signal} recibido. Cerrando API Ruta Limpia...`)
+  await mongoClient?.close().catch(() => {})
+  process.exit(0)
+}
+
+process.once('SIGINT', () => shutdown('SIGINT'))
+process.once('SIGTERM', () => shutdown('SIGTERM'))
