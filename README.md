@@ -25,6 +25,26 @@ npm run dev
 
 Abre la URL de Vite, normalmente `http://localhost:5173`.
 
+## MongoDB local con Docker
+
+Para desarrollar sin depender de Atlas, inicia una base de datos local:
+
+```bash
+npm run db:up
+```
+
+En `.env.local` usa una URI local (no subas este archivo):
+
+```env
+MONGODB_URI=mongodb://127.0.0.1:27017/ruta_limpia
+MONGODB_DB=ruta_limpia
+SESSION_SECRET=usa-un-secreto-largo-y-unico
+```
+
+Después inicia la API con `npm run api`. Para detener el contenedor usa
+`npm run db:down`; los datos se conservan en el volumen de Docker. Puedes ver
+los registros con `npm run db:logs`.
+
 ## Base de datos NoSQL
 
 La app usa MongoDB Atlas mediante una API Node/Express local. MongoDB Atlas tiene
