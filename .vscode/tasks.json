@@ -1,0 +1,46 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Ruta Limpia: API MongoDB",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "api"],
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "ruta-limpia"
+      },
+      "runOptions": {
+        "runOn": "folderOpen"
+      }
+    },
+    {
+      "label": "Ruta Limpia: Web Vite",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "dev", "--", "--host", "127.0.0.1"],
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "ruta-limpia"
+      },
+      "runOptions": {
+        "runOn": "folderOpen"
+      }
+    },
+    {
+      "label": "Ruta Limpia: API + Web",
+      "dependsOrder": "parallel",
+      "dependsOn": [
+        "Ruta Limpia: API MongoDB",
+        "Ruta Limpia: Web Vite"
+      ],
+      "problemMatcher": []
+    }
+  ]
+}
