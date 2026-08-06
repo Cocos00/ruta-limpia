@@ -117,11 +117,21 @@ async function seedFirstAdmin() {
   console.log(`Primer admin creado: ${email}`)
 }
 
-app.get('/api/health', (_request, response) => {
+app.get('/api/health', async (_request, response) => {
+  if (db) {
+    try {
+      await db.command({ ping: 1 })
+      dbStatus = 'mongodb'
+      dbError = ''
+    } catch (error) {
+      dbStatus = 'connection-error'
+      dbError = error.code || error.message
+    }
+  }
   response.json({
     ok: true,
-    database: db ? 'mongodb' : dbStatus,
-    error: db ? '' : dbError,
+    database: db && dbStatus === 'mongodb' ? 'mongodb' : dbStatus,
+    error: dbStatus === 'mongodb' ? '' : dbError,
   })
 })
 
