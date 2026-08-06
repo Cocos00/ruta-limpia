@@ -143,6 +143,23 @@ async function setRecorderCaption(page, text) {
   await page.evaluate((value) => { document.querySelector('#caption').textContent = value }, text)
 }
 
+async function scrollToSelector(page, selector) {
+  await page.evaluate((value) => {
+    const element = document.querySelector(value)
+    if (element) element.scrollIntoView({ behavior: 'instant', block: 'center' })
+  }, selector)
+  await page.waitForTimeout(500)
+}
+
+async function scrollToText(page, text) {
+  await page.evaluate((value) => {
+    const elements = [...document.querySelectorAll('h1, h2, h3, button, article, .report-queue, .admin-block, .route-editor, .driver-state')]
+    const element = elements.find((item) => item.textContent?.includes(value))
+    if (element) element.scrollIntoView({ behavior: 'instant', block: 'center' })
+  }, text)
+  await page.waitForTimeout(500)
+}
+
 async function updateRecorder(recorder, rolePages) {
   const entries = await Promise.all(Object.entries(rolePages).map(async ([role, page]) => {
     const bytes = await page.screenshot({ type: 'jpeg', quality: 70 })
@@ -271,39 +288,71 @@ async function main() {
   }
   const loopPromise = captureLoop()
 
-  await setRecorderCaption(recorder, '1. Tres navegadores reales de la app conectados a MongoDB.')
-  await recorder.waitForTimeout(2200)
+  await setRecorderCaption(recorder, '1. Usuario ve mapa, horario asignado y estado de la ruta en la app real.')
+  await scrollToSelector(citizen.page, '.status-card')
+  await scrollToSelector(driver.page, '.activity-strip')
+  await scrollToSelector(admin.page, '.activity-strip')
+  await recorder.waitForTimeout(3500)
 
-  await setRecorderCaption(recorder, '2. El chofer abre "Mi ruta" y actualiza horario/ruta.')
+  await setRecorderCaption(recorder, '2. Chofer abre "Mi ruta", cambia horario y nombre de ruta.')
   await clickText(driver.page, 'Mi ruta')
+  await scrollToSelector(driver.page, '.route-plan-form')
   await fillByLabel(driver.page, 'Horario', '08:35')
-  await fillByLabel(driver.page, 'Ruta', 'Ruta real sincronizada')
+  await fillByLabel(driver.page, 'Ruta', 'Ruta real con mapa')
   await clickText(driver.page, 'Guardar horario')
-  await recorder.waitForTimeout(4200)
+  await recorder.waitForTimeout(3500)
 
-  await setRecorderCaption(recorder, '3. Delegación publica un aviso desde el panel real.')
+  await setRecorderCaption(recorder, '3. Chofer traza el recorrido tocando el mapa y agregando una parada.')
+  await scrollToSelector(driver.page, '.route-editor')
+  await driver.page.locator('.driver-map').click({ position: { x: 250, y: 135 } })
+  await scrollToSelector(citizen.page, '.status-card')
+  await recorder.waitForTimeout(4300)
+
+  await setRecorderCaption(recorder, '4. Delegación publica un aviso desde el panel real.')
   await clickText(admin.page, 'Panel')
+  await scrollToText(admin.page, 'Aviso extraordinario')
   await admin.page.locator('#message').fill('Demo real: la ruta queda activa y atenderá reportes ciudadanos.')
   await clickText(admin.page, 'Publicar aviso')
+  await scrollToSelector(citizen.page, '.notices')
   await recorder.waitForTimeout(4200)
 
-  await setRecorderCaption(recorder, '4. El usuario abre Reportar y envía un punto crítico.')
+  await setRecorderCaption(recorder, '5. Delegación también tiene gestión de cuentas y reportes.')
+  await scrollToText(admin.page, 'Crear cuenta de personal')
+  await recorder.waitForTimeout(3200)
+
+  await setRecorderCaption(recorder, '6. Usuario abre Reportar y envía un punto crítico con ubicación.')
   await clickText(citizen.page, 'Reportar')
   await fillByLabel(citizen.page, 'Descripción', 'Bolsas acumuladas en esquina principal.')
   await clickText(citizen.page, 'Enviar reporte')
+  await scrollToSelector(citizen.page, '.status-card')
+  await scrollToText(admin.page, 'Reportes ciudadanos')
   await recorder.waitForTimeout(5200)
 
-  await setRecorderCaption(recorder, '5. El chofer ve el reporte y lo suma como desvío.')
+  await setRecorderCaption(recorder, '7. Chofer ve el reporte ciudadano y lo suma como desvío.')
   await clickText(driver.page, 'Mi ruta')
+  await scrollToText(driver.page, 'Reportes ciudadanos')
   await clickText(driver.page, 'Sumar a ruta').catch(() => {})
-  await recorder.waitForTimeout(4200)
+  await scrollToSelector(driver.page, '.route-editor')
+  await scrollToSelector(citizen.page, '.status-card')
+  await recorder.waitForTimeout(4300)
 
-  await setRecorderCaption(recorder, '6. El chofer inicia GPS; usuario y delegación ven la ruta en vivo.')
+  await setRecorderCaption(recorder, '8. Chofer inicia GPS; usuario y delegación ven ubicación en vivo en el mapa.')
+  await scrollToSelector(driver.page, '.driver-state')
   await driver.context.setGeolocation({ latitude: 20.0558, longitude: -99.2782 })
   await clickText(driver.page, 'Iniciar ruta y compartir GPS')
-  await recorder.waitForTimeout(7000)
+  await scrollToSelector(citizen.page, '.status-card')
+  await scrollToSelector(admin.page, '.activity-strip')
+  await recorder.waitForTimeout(6500)
 
-  await setRecorderCaption(recorder, 'Demo finalizada: app real sincronizada por API y MongoDB.')
+  await setRecorderCaption(recorder, '9. Chofer reporta una falla; la ruta se suspende y se notifica como aviso.')
+  await scrollToText(driver.page, 'Falla o incidencia')
+  await fillByLabel(driver.page, 'Falla o incidencia', 'Falla mecánica durante recorrido demo.')
+  await clickText(driver.page, 'Reportar avería mecánica')
+  await scrollToSelector(citizen.page, '.status-card')
+  await scrollToSelector(admin.page, '.notices')
+  await recorder.waitForTimeout(6500)
+
+  await setRecorderCaption(recorder, 'Demo finalizada: mapa, horarios, reportes, avisos, GPS y fallas sincronizados.')
   await recorder.waitForTimeout(2500)
 
   recording = false
@@ -318,7 +367,7 @@ async function main() {
   await browser.close()
 
   const videoPath = await video.path()
-  const finalPath = path.join(outputDir, 'ruta-limpia-app-real-3-roles.webm')
+  const finalPath = path.join(outputDir, 'ruta-limpia-app-real-funciones-completas.webm')
   await fs.copyFile(videoPath, finalPath)
   console.log(finalPath)
 }
