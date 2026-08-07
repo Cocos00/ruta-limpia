@@ -3,6 +3,7 @@ const TOKEN_KEY = 'ruta-limpia-token'
 const REPORTS_KEY = 'ruta-limpia-reports'
 const NOTICES_KEY = 'ruta-limpia-notices'
 const ROUTE_KEY = 'ruta-limpia-route'
+const allowLocalFallback = import.meta.env.DEV
 
 export const cloudEnabled = true
 
@@ -44,7 +45,7 @@ const poll = (load, callback, onError, fallbackLoad) => {
       const items = await load()
       if (active) callback(items)
     } catch (error) {
-      if (fallbackLoad && active) callback(fallbackLoad())
+      if (allowLocalFallback && fallbackLoad && active) callback(fallbackLoad())
       onError?.(error)
     }
   }
@@ -117,10 +118,10 @@ export function subscribeNotices(callback, onError) {
     () => readLocal(NOTICES_KEY, []),
   )
   const refreshLocal = (event) => callback(event.detail)
-  window.addEventListener(`ruta-limpia:${NOTICES_KEY}`, refreshLocal)
+  if (allowLocalFallback) window.addEventListener(`ruta-limpia:${NOTICES_KEY}`, refreshLocal)
   return () => {
     stopPolling()
-    window.removeEventListener(`ruta-limpia:${NOTICES_KEY}`, refreshLocal)
+    if (allowLocalFallback) window.removeEventListener(`ruta-limpia:${NOTICES_KEY}`, refreshLocal)
   }
 }
 
@@ -132,10 +133,10 @@ export function subscribeReports(callback, onError) {
     () => readLocal(REPORTS_KEY, []),
   )
   const refreshLocal = (event) => callback(event.detail)
-  window.addEventListener(`ruta-limpia:${REPORTS_KEY}`, refreshLocal)
+  if (allowLocalFallback) window.addEventListener(`ruta-limpia:${REPORTS_KEY}`, refreshLocal)
   return () => {
     stopPolling()
-    window.removeEventListener(`ruta-limpia:${REPORTS_KEY}`, refreshLocal)
+    if (allowLocalFallback) window.removeEventListener(`ruta-limpia:${REPORTS_KEY}`, refreshLocal)
   }
 }
 
@@ -180,6 +181,7 @@ export async function updateReportStatus(reportId, status) {
     await api(`/reports/${reportId}`, { method: 'PATCH', body: JSON.stringify({ status }) })
     return true
   } catch {
+    if (!allowLocalFallback) return false
     const reports = readLocal(REPORTS_KEY, [])
     const next = reports.map((report) => report.id === reportId ? { ...report, status } : report)
     writeLocal(REPORTS_KEY, next)
@@ -188,11 +190,12 @@ export async function updateReportStatus(reportId, status) {
 }
 
 export async function saveRoute(route) {
-  const next = { ...readLocal(ROUTE_KEY, { status: 'inactive' }), ...route }
+  const next = allowLocalFallback ? { ...readLocal(ROUTE_KEY, { status: 'inactive' }), ...route } : route
   try {
     await api('/routes/current', { method: 'PUT', body: JSON.stringify(next) })
     return true
   } catch {
+    if (!allowLocalFallback) return false
     writeLocal(ROUTE_KEY, next)
     return false
   }
