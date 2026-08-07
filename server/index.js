@@ -28,6 +28,7 @@ let db
 let mongoClient
 let dbStatus = MONGODB_URI ? 'connecting' : 'not-configured'
 let dbError = ''
+let databaseInitialization
 
 const publicUser = (user) => user && ({
   id: String(user._id),
@@ -116,6 +117,45 @@ async function seedFirstAdmin() {
   })
   console.log(`Primer admin creado: ${email}`)
 }
+
+async function connectDatabase() {
+  if (!MONGODB_URI) {
+    dbStatus = 'not-configured'
+    dbError = 'MONGODB_URI no configurado o es el ejemplo.'
+    return
+  }
+
+  if (db) return
+
+  if (!databaseInitialization) {
+    databaseInitialization = (async () => {
+      try {
+        mongoClient = new MongoClient(MONGODB_URI, { serverSelectionTimeoutMS: MONGODB_SERVER_SELECTION_TIMEOUT_MS })
+        await mongoClient.connect()
+        db = mongoClient.db(DB_NAME)
+        await db.collection('users').createIndex({ email: 1 }, { unique: true })
+        await seedFirstAdmin()
+        dbStatus = 'mongodb'
+        dbError = ''
+        console.log(`MongoDB conectado: ${DB_NAME}`)
+      } catch (error) {
+        dbStatus = 'connection-error'
+        dbError = error.code || error.message
+        databaseInitialization = null
+        await mongoClient?.close().catch(() => {})
+        mongoClient = null
+        console.warn(`No se pudo conectar a MongoDB (${error.code || error.message}). La API seguira en modo demo.`)
+      }
+    })()
+  }
+
+  await databaseInitialization
+}
+
+app.use(async (_request, _response, next) => {
+  await connectDatabase()
+  next()
+})
 
 app.get('/api/health', (_request, response) => {
   response.json({
@@ -242,33 +282,16 @@ app.put('/api/routes/current', requireDb, requireUser, requireStaff, async (requ
 })
 
 async function start() {
-  if (MONGODB_URI) {
-    try {
-      mongoClient = new MongoClient(MONGODB_URI, { serverSelectionTimeoutMS: MONGODB_SERVER_SELECTION_TIMEOUT_MS })
-      await mongoClient.connect()
-      db = mongoClient.db(DB_NAME)
-      await db.collection('users').createIndex({ email: 1 }, { unique: true })
-      await seedFirstAdmin()
-      dbStatus = 'mongodb'
-      dbError = ''
-      console.log(`MongoDB conectado: ${DB_NAME}`)
-    } catch (error) {
-      dbStatus = 'connection-error'
-      dbError = error.code || error.message
-      console.warn(`No se pudo conectar a MongoDB (${error.code || error.message}). La API seguira en modo demo.`)
-    }
-  } else {
-    dbStatus = 'not-configured'
-    dbError = 'MONGODB_URI no configurado o es el ejemplo.'
-    console.log('MONGODB_URI no configurado o todavia es el ejemplo. La API iniciara en modo demo.')
-  }
+  await connectDatabase()
   app.listen(PORT, () => console.log(`API Ruta Limpia en http://localhost:${PORT}`))
 }
 
-start().catch((error) => {
-  console.error(error)
-  process.exit(1)
-})
+if (!process.env.VERCEL) {
+  start().catch((error) => {
+    console.error(error)
+    process.exit(1)
+  })
+}
 
 const shutdown = async (signal) => {
   console.log(`${signal} recibido. Cerrando API Ruta Limpia...`)
@@ -278,3 +301,5 @@ const shutdown = async (signal) => {
 
 process.once('SIGINT', () => shutdown('SIGINT'))
 process.once('SIGTERM', () => shutdown('SIGTERM'))
+
+export default app
