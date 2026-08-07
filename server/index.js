@@ -1,5 +1,7 @@
 import crypto from 'node:crypto'
 import dns from 'node:dns'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import express from 'express'
@@ -17,6 +19,8 @@ const DB_NAME = process.env.MONGODB_DB || 'ruta_limpia'
 const TOKEN_SECRET = process.env.SESSION_SECRET || 'ruta-limpia-dev-secret'
 const DNS_SERVERS = (process.env.DNS_SERVERS || '8.8.8.8,1.1.1.1').split(',').map((server) => server.trim()).filter(Boolean)
 const MONGODB_SERVER_SELECTION_TIMEOUT_MS = Number(process.env.MONGODB_SERVER_SELECTION_TIMEOUT_MS || 8000)
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const distPath = path.resolve(__dirname, '..', 'dist')
 
 if (DNS_SERVERS.length) dns.setServers(DNS_SERVERS)
 
@@ -289,6 +293,11 @@ app.put('/api/routes/current', requireDb, requireUser, requireStaff, async (requ
   }
   await db.collection('routes').updateOne({ key: 'current' }, { $set: route }, { upsert: true })
   response.json({ ok: true })
+})
+
+app.use(express.static(distPath))
+app.get(/^(?!\/api).*/, (_request, response) => {
+  response.sendFile(path.join(distPath, 'index.html'))
 })
 
 async function start() {

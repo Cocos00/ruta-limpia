@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: ruta-limpia
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB
+        value: ruta_limpia
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: FIRST_ADMIN_EMAIL
+        sync: false
+      - key: FIRST_ADMIN_PASSWORD
+        sync: false
+      - key: FIRST_ADMIN_NAME
+        value: Delegacion
+      - key: DNS_SERVERS
+        value: 8.8.8.8,1.1.1.1
